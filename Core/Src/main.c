@@ -27,6 +27,7 @@
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 TIM_HandleTypeDef htim3;
+UART_HandleTypeDef huart1;
 
 /* USER CODE END PTD */
 
@@ -49,6 +50,9 @@ volatile uint32_t rc_us = 1500;           // latest width in µs
 /* Private function prototypes -----------------------------------------------*/
 void SystemClock_Config(void);
 static void MX_GPIO_Init(void);
+static void MX_USART1_UART_Init(void);
+void MX_TIM3_Init(void);
+int _write(int file, char *ptr, int len);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -87,8 +91,11 @@ int main(void)
 
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
-  /* USER CODE BEGIN 2 */
+  MX_TIM3_Init();
+  MX_USART1_UART_Init();
 
+  /* USER CODE BEGIN 2 */
+  printf("\r\n*** USART1 ready on PA2/PA3 @115200 ***\r\n");
   /* USER CODE END 2 */
 
   /* Infinite loop */
@@ -96,7 +103,8 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
-
+    printf("Tick: %lu ms\r\n", HAL_GetTick());
+    HAL_Delay(1000);
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
@@ -263,6 +271,33 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
         if (rc_us < 800 || rc_us > 2200)   // sanity clamp
             rc_us = 1500;
     }
+}
+
+int _write(int file, char *ptr, int len)
+{
+    (void)file;                       /* stdout/stderr both go to UART */
+    HAL_UART_Transmit(&huart1, (uint8_t*)ptr, len, HAL_MAX_DELAY);
+    return len;
+}
+
+static void MX_USART1_UART_Init(void)
+{
+    __HAL_RCC_USART1_CLK_ENABLE();          /* ❶ peripheral clock */
+
+    huart1.Instance          = USART1;
+    huart1.Init.BaudRate     = 115200;
+    huart1.Init.WordLength   = UART_WORDLENGTH_8B;
+    huart1.Init.StopBits     = UART_STOPBITS_1;
+    huart1.Init.Parity       = UART_PARITY_NONE;
+    huart1.Init.Mode         = UART_MODE_TX_RX;   /* TX + RX both enabled */
+    huart1.Init.HwFlowCtl    = UART_HWCONTROL_NONE;
+    huart1.Init.OverSampling = UART_OVERSAMPLING_16;
+    HAL_UART_Init(&huart1);
+
+    /* Optional: enable interrupt-driven TX/RX */
+    // __HAL_UART_ENABLE_IT(&huart1, UART_IT_RXNE);
+    // HAL_NVIC_SetPriority(USART1_IRQn, 2, 0);
+    // HAL_NVIC_EnableIRQ(USART1_IRQn);
 }
 
 /* USER CODE END 4 */
