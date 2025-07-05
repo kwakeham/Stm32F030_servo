@@ -31,7 +31,7 @@ extern "C" {
 
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
-
+#include "drv8220.h"  // DRV8220 motor driver header
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/
