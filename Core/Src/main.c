@@ -53,6 +53,7 @@ static void MX_GPIO_Init(void);
 static void MX_USART1_UART_Init(void);
 void MX_TIM3_Init(void);
 int _write(int file, char *ptr, int len);
+void TIM3_IRQHandler(void);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -103,7 +104,8 @@ int main(void)
   while (1)
   {
     /* USER CODE END WHILE */
-    printf("Tick: %lu ms\r\n", HAL_GetTick());
+    uint32_t width = rc_us;       /* atomic copy */
+    printf("Tick: %lu pwm: %lu ms\r\n", HAL_GetTick(), width);
     HAL_Delay(1000);
     /* USER CODE BEGIN 3 */
   }
@@ -273,6 +275,13 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
     }
 }
 
+/* stm32f0xx_it.c */
+void TIM3_IRQHandler(void)
+{
+    HAL_TIM_IRQHandler(&htim3);   /* hands control to HAL */
+}
+
+
 int _write(int file, char *ptr, int len)
 {
     (void)file;                       /* stdout/stderr both go to UART */
@@ -313,6 +322,7 @@ void Error_Handler(void)
   __disable_irq();
   while (1)
   {
+    printf("Error occurred!\r\n");
   }
   /* USER CODE END Error_Handler_Debug */
 }
