@@ -54,6 +54,7 @@ static void MX_USART1_UART_Init(void);
 void MX_TIM3_Init(void);
 int _write(int file, char *ptr, int len);
 void TIM3_IRQHandler(void);
+static inline int16_t rc_us_to_pwm(int32_t us);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -107,8 +108,11 @@ int main(void)
   {
     /* USER CODE END WHILE */
     uint32_t width = rc_us;       /* atomic copy */
-    printf("Tick: %lu pwm: %lu ms\r\n", HAL_GetTick(), width);
-    HAL_Delay(1000);
+    int16_t pwm = rc_us_to_pwm(width);
+    DRV8220_SetSpeed(pwm);                  /* drive the motor  */
+    // printf("Tick: %lu pwm: %lu ms\r\n", HAL_GetTick(), width);
+    printf("%lu µs  →  %d\n", width, pwm);
+    HAL_Delay(500);
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
@@ -311,6 +315,24 @@ static void MX_USART1_UART_Init(void)
     // HAL_NVIC_EnableIRQ(USART1_IRQn);
 }
 
+/* Map RC-servo input (µs) → signed duty            */
+/* 1000 µs = full-reverse (-1000)                    */
+/* 1500 µs = neutral (0)                             */
+/* 2000 µs = full-forward (+1000)                    */
+static inline int16_t rc_us_to_pwm(int32_t us)
+{
+    /* Linear scaling: 500 µs span ↔ 1000 units      */
+    int32_t pwm = (us - 1500) * 2;       /* (us-1500) × (1000/500) */
+
+    /* Clamp to the endpoints in case of noise       */
+    if (pwm >  1000) pwm =  1000;
+    if (pwm < -1000) pwm = -1000;
+
+    /* Optional: add a small dead-band around center */
+    if (pwm > -20 && pwm < 20) pwm = 0;
+
+    return (int16_t)pwm;
+}
 /* USER CODE END 4 */
 
 /**
