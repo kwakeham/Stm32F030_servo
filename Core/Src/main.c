@@ -26,6 +26,7 @@
 
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
+TIM_HandleTypeDef htim3;
 
 /* USER CODE END PTD */
 
@@ -42,7 +43,7 @@
 /* Private variables ---------------------------------------------------------*/
 
 /* USER CODE BEGIN PV */
-
+volatile uint32_t rc_us = 1500;           // latest width in µs
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -187,7 +188,7 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Pin = GPIO_PIN_6|GPIO_PIN_7;
   GPIO_InitStruct.Mode = GPIO_MODE_AF_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
   GPIO_InitStruct.Alternate = GPIO_AF1_TIM3;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
@@ -211,6 +212,58 @@ static void MX_GPIO_Init(void)
 }
 
 /* USER CODE BEGIN 4 */
+/* ------------- GPIO (PA6, PA7 → TIM3 CH1/CH2) ---------------- */
+
+void MX_TIM3_Init(void)
+{
+    __HAL_RCC_TIM3_CLK_ENABLE();
+
+    htim3.Instance           = TIM3;
+    htim3.Init.Prescaler     = (HAL_RCC_GetHCLKFreq() / 1000000) - 1; // 1 µs
+    htim3.Init.CounterMode   = TIM_COUNTERMODE_UP;
+    htim3.Init.Period        = 0xFFFF;
+    htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
+    HAL_TIM_IC_Init(&htim3);
+
+    /* PWM-input: CH1 = rising (direct), CH2 = falling (indirect) */
+    TIM_IC_InitTypeDef ic = {
+        .ICPrescaler = TIM_ICPSC_DIV1,
+        .ICFilter    = 0
+    };
+    ic.ICPolarity   = TIM_INPUTCHANNELPOLARITY_RISING;
+    ic.ICSelection  = TIM_ICSELECTION_DIRECTTI;
+    HAL_TIM_IC_ConfigChannel(&htim3, &ic, TIM_CHANNEL_1);
+
+    ic.ICPolarity   = TIM_INPUTCHANNELPOLARITY_FALLING;
+    ic.ICSelection  = TIM_ICSELECTION_INDIRECTTI;
+    HAL_TIM_IC_ConfigChannel(&htim3, &ic, TIM_CHANNEL_2);
+
+    /* reset counter on rising edge */
+    TIM_SlaveConfigTypeDef slave = {
+        .SlaveMode   = TIM_SLAVEMODE_RESET,
+        .InputTrigger= TIM_TS_TI1FP1
+    };
+    HAL_TIM_SlaveConfigSynchro(&htim3, &slave);
+
+    /* start capture with interrupt on CH2 (falling) */
+    HAL_TIM_IC_Start_IT(&htim3, TIM_CHANNEL_1);
+    HAL_TIM_IC_Start_IT(&htim3, TIM_CHANNEL_2);
+
+    HAL_NVIC_SetPriority(TIM3_IRQn, 1, 0);
+    HAL_NVIC_EnableIRQ(TIM3_IRQn);
+}
+
+/* ------------- IRQ: save the width --------------------------- */
+void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
+{
+    if (htim->Instance == TIM3 &&
+        htim->Channel   == HAL_TIM_ACTIVE_CHANNEL_2)
+    {
+        rc_us = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_2);
+        if (rc_us < 800 || rc_us > 2200)   // sanity clamp
+            rc_us = 1500;
+    }
+}
 
 /* USER CODE END 4 */
 
