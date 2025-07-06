@@ -56,6 +56,9 @@ void MX_TIM3_Init(void);
 int _write(int file, char *ptr, int len);
 void TIM3_IRQHandler(void);
 static inline int16_t rc_us_to_pwm(int32_t us);
+void uart_puts(const char *s);
+void uart_putu32(uint32_t v);
+void uart_puti32(int32_t v);
 /* USER CODE BEGIN PFP */
 
 /* USER CODE END PFP */
@@ -121,6 +124,13 @@ int main(void)
         uint32_t width = rc_us;  /* atomic copy                  */
         int16_t  pwm = rc_us_to_pwm(width);
         DRV8220_SetSpeed(pwm);
+
+        uint32_t angle = TLV493D_ReadAngleDeg();  /* read angle sensor */
+
+        // uart_puts(" angle: ");
+        uart_putu32(angle);
+        uart_puts("\r\n");
+
     }
 
         /* go to sleep until the next capture interrupt (≈20 ms) */
@@ -301,12 +311,12 @@ void TIM3_IRQHandler(void)
 }
 
 
-int _write(int file, char *ptr, int len)
-{
-    (void)file;                       /* stdout/stderr both go to UART */
-    HAL_UART_Transmit(&huart1, (uint8_t*)ptr, len, HAL_MAX_DELAY);
-    return len;
-}
+// int _write(int file, char *ptr, int len)
+// {
+//     (void)file;                       /* stdout/stderr both go to UART */
+//     HAL_UART_Transmit(&huart1, (uint8_t*)ptr, len, HAL_MAX_DELAY);
+//     return len;
+// }
 
 static void MX_USART1_UART_Init(void)
 {
@@ -346,6 +356,54 @@ static inline int16_t rc_us_to_pwm(int32_t us)
 
     return (int16_t)pwm;
 }
+
+void uart_puts(const char *s)
+{
+    HAL_UART_Transmit(&huart1, (uint8_t*)s, strlen(s), HAL_MAX_DELAY);
+}
+
+void uart_putu32(uint32_t v)
+{
+    char buf[11];            /* enough for 4 294 967 295 */
+    int  i = 10;
+    buf[i--] = '\0';
+    do { buf[i--] = '0' + (v % 10); } while ((v /= 10));
+    HAL_UART_Transmit(&huart1, (uint8_t*)&buf[i+1], 10-i, HAL_MAX_DELAY);
+}
+
+void uart_puti32(int32_t v)
+{
+    /*  "-2147483648"  + '\0'  = 12 bytes  */
+    char buf[12];
+    int  i = 11;
+    buf[i--] = '\0';
+
+    /* Special-case INT32_MIN because –INT32_MIN overflows */
+    if (v == INT32_MIN) {
+        const char *minstr = "-2147483648";
+        HAL_UART_Transmit(&huart1, (uint8_t*)minstr, 11, HAL_MAX_DELAY);
+        return;
+    }
+
+    /* Handle sign */
+    uint32_t u = v;
+    if (v < 0) {
+        u = (uint32_t)(-v);   /* make positive */
+    }
+
+    /* Convert to decimal */
+    do {
+        buf[i--] = '0' + (u % 10);
+        u /= 10;
+    } while (u);
+
+    if (v < 0) {
+        buf[i--] = '-';
+    }
+
+    HAL_UART_Transmit(&huart1, (uint8_t*)&buf[i+1], 11 - i, HAL_MAX_DELAY);
+}
+
 /* USER CODE END 4 */
 
 /**
@@ -359,7 +417,7 @@ void Error_Handler(void)
   __disable_irq();
   while (1)
   {
-    printf("Error occurred!\r\n");
+    // printf("Error occurred!\r\n");
   }
   /* USER CODE END Error_Handler_Debug */
 }
