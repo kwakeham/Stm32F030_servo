@@ -56,6 +56,7 @@ Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_tim.c \
 Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_tim_ex.c \
 Drivers/STM32F0xx_HAL_Driver/Src/stm32f0xx_hal_uart.c \
 Core/Src/drv8220.c \
+Core/Src/tlv493d.c \
 Core/Src/system_stm32f0xx.c \
 Core/Src/sysmem.c \
 Core/Src/syscalls.c

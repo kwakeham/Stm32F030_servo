@@ -32,6 +32,7 @@ extern "C" {
 /* Private includes ----------------------------------------------------------*/
 /* USER CODE BEGIN Includes */
 #include "drv8220.h"  // DRV8220 motor driver header
+#include "tlv493d.h"  // TLV493D magnetic angle sensor header
 /* USER CODE END Includes */
 
 /* Exported types ------------------------------------------------------------*/

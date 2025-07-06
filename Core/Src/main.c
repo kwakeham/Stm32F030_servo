@@ -45,6 +45,7 @@ UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
 volatile uint32_t rc_us = 1500;           // latest width in µs
+volatile uint8_t  rc_new;         /* flag set in ISR             */
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -97,6 +98,7 @@ int main(void)
   MX_USART1_UART_Init();
 
   DRV8220_Init();  // Initialize the DRV8220 motor driver
+  TLV493D_Init();  // Initialize the TLV493D magnetic angle sensor
 
   /* USER CODE BEGIN 2 */
   printf("\r\n*** USART1 ready on PA2/PA3 @115200 ***\r\n");
@@ -106,13 +108,23 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    /* USER CODE END WHILE */
-    uint32_t width = rc_us;       /* atomic copy */
-    int16_t pwm = rc_us_to_pwm(width);
-    DRV8220_SetSpeed(pwm);                  /* drive the motor  */
-    // printf("Tick: %lu pwm: %lu ms\r\n", HAL_GetTick(), width);
-    printf("%lu µs  →  %d\n", width, pwm);
-    HAL_Delay(500);
+    // /* USER CODE END WHILE */
+    // uint32_t width = rc_us;       /* atomic copy */
+    // int16_t pwm = rc_us_to_pwm(width);
+    // DRV8220_SetSpeed(pwm);                  /* drive the motor  */
+    // // printf("Tick: %lu pwm: %lu ms\r\n", HAL_GetTick(), width);
+    // printf("%lu µs  →  %d\n", width, pwm);
+    // HAL_Delay(500);
+    if (rc_new)               /* do we have fresh data?      */
+    {
+        rc_new = 0;           /* clear BEFORE processing      */
+        uint32_t width = rc_us;  /* atomic copy                  */
+        int16_t  pwm = rc_us_to_pwm(width);
+        DRV8220_SetSpeed(pwm);
+    }
+
+        /* go to sleep until the next capture interrupt (≈20 ms) */
+    __WFI();                  /* or HAL_PWR_EnterSLEEPMode()  */
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
@@ -216,12 +228,12 @@ static void MX_GPIO_Init(void)
   // HAL_GPIO_Init(GPIOB, &GPIO_InitStruct);
 
   /*Configure GPIO pins : PA9 PA10 */
-  GPIO_InitStruct.Pin = GPIO_PIN_9|GPIO_PIN_10;
-  GPIO_InitStruct.Mode = GPIO_MODE_AF_OD;
-  GPIO_InitStruct.Pull = GPIO_NOPULL;
-  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
-  GPIO_InitStruct.Alternate = GPIO_AF4_I2C1;
-  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+  // GPIO_InitStruct.Pin = GPIO_PIN_9|GPIO_PIN_10;
+  // GPIO_InitStruct.Mode = GPIO_MODE_AF_OD;
+  // GPIO_InitStruct.Pull = GPIO_NOPULL;
+  // GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_HIGH;
+  // GPIO_InitStruct.Alternate = GPIO_AF4_I2C1;
+  // HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
 /* USER CODE BEGIN MX_GPIO_Init_2 */
 /* USER CODE END MX_GPIO_Init_2 */
@@ -278,6 +290,7 @@ void HAL_TIM_IC_CaptureCallback(TIM_HandleTypeDef *htim)
         rc_us = HAL_TIM_ReadCapturedValue(htim, TIM_CHANNEL_2);
         if (rc_us < 800 || rc_us > 2200)   // sanity clamp
             rc_us = 1500;
+        rc_new = 1;  // set flag to indicate new value available
     }
 }
 
