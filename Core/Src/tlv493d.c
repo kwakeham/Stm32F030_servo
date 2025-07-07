@@ -30,6 +30,22 @@ static void TLV_I2C_GPIO_Init(void)
     HAL_GPIO_Init(GPIOA, &io);
 }
 
+static void i2c_recover(void)          /* PA9=SCL, PA10=SDA */
+{
+    GPIO_InitTypeDef io = { .Pin = GPIO_PIN_9|GPIO_PIN_10,
+                            .Mode = GPIO_MODE_OUTPUT_OD,
+                            .Pull = GPIO_PULLUP, .Speed = GPIO_SPEED_FREQ_HIGH };
+    __HAL_RCC_GPIOA_CLK_ENABLE();
+    HAL_GPIO_Init(GPIOA, &io);
+
+    for (int i = 0; i < 9; ++i) {              /* 9 clocks, SDA released */
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_9, GPIO_PIN_SET);
+        HAL_Delay(1);
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_9, GPIO_PIN_RESET);
+        HAL_Delay(1);
+    }
+}
+
 /* ------------ I²C1 @ 100 kHz  (Timing for SYSCLK = 48 MHz) ------- */
 /* 0x00201D2B  → 100 kbit/s, rise = 100 ns, fall = 10 ns            */
 static void TLV_I2C_Init(void)
@@ -48,14 +64,14 @@ static void TLV_I2C_Init(void)
 /* ================================================================ */
 /*  Helper: general-call reset  +  master-controlled configuration  */
 /* ================================================================ */
-// static HAL_StatusTypeDef tlv_soft_reset(void)
-// {
-//     uint8_t zero = 0x00;
-//     HAL_StatusTypeDef st =
-//         HAL_I2C_Master_Transmit(&hi2c1, 0x00, &zero, 1, HAL_MAX_DELAY); /* GC */
-//     HAL_Delay(2);                              /* >1.5 ms as per datasheet */
-//     return st;
-// }
+static HAL_StatusTypeDef tlv_soft_reset(void)
+{
+    uint8_t zero = 0x00;
+    HAL_StatusTypeDef st =
+        HAL_I2C_Master_Transmit(&hi2c1, TLV_ADDR_W, &zero, 1, HAL_MAX_DELAY); /* GC */
+    HAL_Delay(2);                              /* >1.5 ms as per datasheet */
+    return st;
+}
 
 static HAL_StatusTypeDef tlv_send_config(void)
 {
@@ -120,7 +136,8 @@ void TLV493D_Init(void)
     TLV_I2C_GPIO_Init();
     TLV_I2C_Init();
     // tlv_send_config();  /* send initial configuration */
-    // tlv_soft_reset();  /* general-call reset */
+    HAL_Delay(2);      /* >1.5 ms as per datasheet */
+    tlv_soft_reset();  /* general-call reset */
     HAL_Delay(2);      /* >1.5 ms as per datasheet */
 }
 
@@ -161,6 +178,11 @@ uint16_t TLV493D_ReadAngleDeg(void)
         // angle = int_atan2_deg(y, x);
         printf("x=%d, y=%d\r\n", x, y);
         // printf("%d°\r\n", angle);
+    } else
+    {
+        uint32_t err = HAL_I2C_GetError(&hi2c1);
+        printf("I2C ERR 0x %lx \r\n", err);
+        return HAL_ERROR;
     }
 
     return angle;            /* 0 … 359° */
