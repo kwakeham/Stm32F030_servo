@@ -12,6 +12,10 @@ static I2C_HandleTypeDef hi2c1;
 #define REG_MOD2       0x11
 #define REG_MOD3       0x12
 
+/* 8-bit bus addresses (include R/W bit) */
+#define TLV_ADDR_W   0xBC        /* write byte */
+#define TLV_ADDR_R   0xBD        /* read  byte */
+
 /* ------------ GPIO : PA9=SCL , PA10=SDA (AF4) ------------------- */
 static void TLV_I2C_GPIO_Init(void)
 {
@@ -53,14 +57,31 @@ static void TLV_I2C_Init(void)
 //     return st;
 // }
 
-// static HAL_StatusTypeDef tlv_write_config(void)
-// {
-//     uint8_t cfg[4] = { REG_MOD1, 0x01, 0x00, 0x02 };  /* Fast+LP, MC-mode */
-//     return HAL_I2C_Master_Transmit(&hi2c1,
-//                                    TLV_ADDR << 1,
-//                                    cfg, sizeof cfg,
-//                                    HAL_MAX_DELAY);
-// }
+static HAL_StatusTypeDef tlv_send_config(void)
+{
+    /* 0x00 pointer, then 0x83 0x00 0x60  (global parity already odd) */
+    const uint8_t cfg[4] = { 0x00, 0x83, 0x00, 0x60 };
+
+    HAL_StatusTypeDef st =
+        HAL_I2C_Master_Transmit(&hi2c1, TLV_ADDR_W,   /* 8-bit write addr */
+                                (uint8_t*)cfg, sizeof cfg,
+                                HAL_MAX_DELAY);
+
+    return st;
+}
+
+static HAL_StatusTypeDef tlv_send_sleep(void)
+{
+    /* 0x00 pointer, then 0x83 0x00 0x60  (global parity already odd) */
+    const uint8_t cfg[4] = { 0x00, 0x00, 0x00, 0x20 };
+
+    HAL_StatusTypeDef st =
+        HAL_I2C_Master_Transmit(&hi2c1, TLV_ADDR_W,   /* 8-bit write addr */
+                                (uint8_t*)cfg, sizeof cfg,
+                                HAL_MAX_DELAY);
+
+    return st;
+}
 
 /* ================================================================ */
 /*  Fixed-point atan2  (≤1 ° error, no libm)                         */
@@ -98,55 +119,34 @@ void TLV493D_Init(void)
 {
     TLV_I2C_GPIO_Init();
     TLV_I2C_Init();
+    tlv_send_config();  /* send initial configuration */
     // tlv_soft_reset();  /* general-call reset */
     // HAL_Delay(2);      /* >1.5 ms as per datasheet */
 }
 
 /* ---- wakes TLV493D, waits one conversion, reads 6-byte frame ---- */
+
+
+/* ---- no more “<< 1” anywhere ---- */
 static HAL_StatusTypeDef tlv493d_read6(uint8_t buf[6])
 {
-    /* 1. Put sensor into MASTER-CONTROLLED (MODE = 0b001) */
-    uint8_t wr[4];
+    if (tlv_send_config() != HAL_OK)
+    {
+        uint32_t err = HAL_I2C_GetError(&hi2c1);
+        printf("I2C ERR 0x %lx \r\n", err);
+        return HAL_ERROR;
+    }
 
-    /* 1.1 read shadow registers 0x00-0x03 */
-    if (HAL_I2C_Master_Transmit(&hi2c1, TLV_ADDR << 1,
-                                (uint8_t[]){0x00}, 1, HAL_MAX_DELAY) != HAL_OK)
+    HAL_Delay(3);  /* wait one conversion (≥2.3 ms) */
+
+    if (HAL_I2C_Master_Receive (&hi2c1, TLV_ADDR_R, buf, 6, HAL_MAX_DELAY) != HAL_OK)
         return HAL_ERROR;
 
-    if (HAL_I2C_Master_Receive(&hi2c1, TLV_ADDR << 1,
-                               wr, 4, HAL_MAX_DELAY) != HAL_OK)
-        return HAL_ERROR;
-
-    /* 1.2 modify only MODE bits */
-    wr[1] = (wr[1] & ~0x07) | 0x01;        /* MODE=001 */
-
-    /* 1.3 recompute GLOBAL **odd** parity (bit7 of MOD1) */
-    uint32_t map =  (uint32_t)wr[0] |
-                   ((uint32_t)wr[1] <<  8) |
-                   ((uint32_t)wr[2] << 16) |
-                   ((uint32_t)wr[3] << 24);
-    if ((__builtin_popcount(map) & 1) == 0) wr[1] ^= 0x80;
-
-    /* 1.4 write back complete frame */
-    uint8_t frame[5] = {0x00, wr[0], wr[1], wr[2], wr[3]};
-    if (HAL_I2C_Master_Transmit(&hi2c1, TLV_ADDR << 1,
-                                frame, 5, HAL_MAX_DELAY) != HAL_OK)
-        return HAL_ERROR;
-
-    /* 2. wait for measurement (datasheet 2.3 ms typ, 3 ms safe) */
-    HAL_Delay(3);
-
-    /* 3. pointer to 0x00, repeated START, read 6 bytes */
-    if (HAL_I2C_Master_Transmit(&hi2c1, TLV_ADDR << 1,
-                                (uint8_t[]){0x00}, 1, HAL_MAX_DELAY) != HAL_OK)
-        return HAL_ERROR;
-
-    if (HAL_I2C_Master_Receive(&hi2c1, TLV_ADDR << 1,
-                               buf, 6, HAL_MAX_DELAY) != HAL_OK)
-        return HAL_ERROR;
+    tlv_send_sleep();  /* put TLV493D to sleep */
 
     return HAL_OK;
 }
+
 
 
 uint16_t TLV493D_ReadAngleDeg(void)
@@ -154,11 +154,12 @@ uint16_t TLV493D_ReadAngleDeg(void)
     uint8_t raw[6];
     uint16_t angle = 0;
     if (tlv493d_read6(raw) == HAL_OK) {
-        int16_t x = (raw[0] << 4) | (raw[4] >> 4);
-        int16_t y = (raw[1] << 4) | (raw[4] & 0x0F);
+        int16_t x = ((raw[0] << 4) | (raw[4] >> 4));
+        int16_t y = ((raw[1] << 4) | (raw[4] & 0x0F));
         if (x & 0x800) x |= 0xF000;
         if (y & 0x800) y |= 0xF000;
-        angle = int_atan2_deg(y, x);
+        // angle = int_atan2_deg(y, x);
+        printf("x=%d, y=%d\r\n", x, y);
         // printf("%d°\r\n", angle);
     }
 

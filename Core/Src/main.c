@@ -65,7 +65,19 @@ void uart_puti32(int32_t v);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
+static int systick_is_running(void)
+{
+    return (SysTick->CTRL & SysTick_CTRL_ENABLE_Msk) != 0;
+}
 
+#define DEBUG_PIN   GPIO_PIN_5
+#define DEBUG_PORT  GPIOA
+static void wait3(void)
+{
+    HAL_GPIO_WritePin(DEBUG_PORT, DEBUG_PIN, GPIO_PIN_SET); /* ↑ */
+    HAL_Delay(3);                                           /* 3 ms */
+    HAL_GPIO_WritePin(DEBUG_PORT, DEBUG_PIN, GPIO_PIN_RESET);/* ↓ */
+}
 /* USER CODE END 0 */
 
 /**
@@ -107,6 +119,18 @@ int main(void)
   printf("\r\n*** USART1 ready on PA2/PA3 @115200 ***\r\n");
   /* USER CODE END 2 */
 
+  if (systick_is_running())
+    printf("SysTick ON  –  HAL_Delay() will block\r\n");
+  else
+      printf("SysTick OFF –  HAL_Delay() returns immediately!\r\n");
+
+  wait3();  /* wait 3 ms */
+  // extern volatile uint32_t uwTick;
+  // uint32_t t0 = uwTick;
+  // HAL_Delay(3);
+  // uint32_t t1 = uwTick;
+  // uart_putu32(t1 - t0);    /* should print 3 (±1) */
+  // uart_puts("\r\n");
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
@@ -128,8 +152,8 @@ int main(void)
         uint32_t angle = TLV493D_ReadAngleDeg();  /* read angle sensor */
 
         // uart_puts(" angle: ");
-        uart_putu32(angle);
-        uart_puts("\r\n");
+        // uart_putu32(angle);
+        // uart_puts("\r\n");
 
     }
 
@@ -231,6 +255,15 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Alternate = GPIO_AF1_TIM3;
   HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
 
+  GPIO_InitTypeDef io = {0};
+  io.Pin   = GPIO_PIN_5;              /* PA5 */
+  io.Mode  = GPIO_MODE_OUTPUT_PP;     /* push-pull output */
+  io.Pull  = GPIO_NOPULL;
+  io.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOA, &io);
+
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_5, GPIO_PIN_RESET);   /* start low */
+
   // /*Configure GPIO pin : PB1 */
   // GPIO_InitStruct.Pin = GPIO_PIN_1;
   // GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
@@ -312,12 +345,12 @@ void TIM3_IRQHandler(void)
 }
 
 
-// int _write(int file, char *ptr, int len)
-// {
-//     (void)file;                       /* stdout/stderr both go to UART */
-//     HAL_UART_Transmit(&huart1, (uint8_t*)ptr, len, HAL_MAX_DELAY);
-//     return len;
-// }
+int _write(int file, char *ptr, int len)
+{
+    (void)file;                       /* stdout/stderr both go to UART */
+    HAL_UART_Transmit(&huart1, (uint8_t*)ptr, len, HAL_MAX_DELAY);
+    return len;
+}
 
 static void MX_USART1_UART_Init(void)
 {
