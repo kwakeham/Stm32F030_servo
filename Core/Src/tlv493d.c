@@ -119,9 +119,9 @@ void TLV493D_Init(void)
 {
     TLV_I2C_GPIO_Init();
     TLV_I2C_Init();
-    tlv_send_config();  /* send initial configuration */
+    // tlv_send_config();  /* send initial configuration */
     // tlv_soft_reset();  /* general-call reset */
-    // HAL_Delay(2);      /* >1.5 ms as per datasheet */
+    HAL_Delay(2);      /* >1.5 ms as per datasheet */
 }
 
 /* ---- wakes TLV493D, waits one conversion, reads 6-byte frame ---- */
