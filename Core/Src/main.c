@@ -149,16 +149,18 @@ int main(void)
         int16_t  pwm = rc_us_to_pwm(width);
         DRV8220_SetSpeed(pwm);
 
-        uint32_t angle = TLV493D_ReadAngleDeg();  /* read angle sensor */
+        // uint32_t angle = TLV493D_ReadAngleDeg();  /* read angle sensor */
 
         // uart_puts(" angle: ");
         // uart_putu32(angle);
         // uart_puts("\r\n");
 
     }
+    uint32_t angle = TLV493D_ReadAngleDeg();  /* read angle sensor */
+    HAL_Delay(20);  /* wait 20 ms */
 
         /* go to sleep until the next capture interrupt (≈20 ms) */
-    __WFI();                  /* or HAL_PWR_EnterSLEEPMode()  */
+    // __WFI();                  /* or HAL_PWR_EnterSLEEPMode()  */
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */

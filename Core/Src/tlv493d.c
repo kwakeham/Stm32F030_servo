@@ -13,21 +13,42 @@ static I2C_HandleTypeDef hi2c1;
 #define REG_MOD3       0x12
 
 /* 8-bit bus addresses (include R/W bit) */
-#define TLV_ADDR_W   0xBC        /* write byte */
-#define TLV_ADDR_R   0xBD        /* read  byte */
+// #define TLV_ADDR_W   0xBC        /* write byte */
+// #define TLV_ADDR_R   0xBD        /* read  byte */
+#define TLV_ADDR_W   0x3E        /* write byte */
+#define TLV_ADDR_R   0x3F        /* read  byte */
 
 /* ------------ GPIO : PA9=SCL , PA10=SDA (AF4) ------------------- */
 static void TLV_I2C_GPIO_Init(void)
 {
     __HAL_RCC_GPIOA_CLK_ENABLE();
+
     GPIO_InitTypeDef io = {
-        .Pin       = GPIO_PIN_9 | GPIO_PIN_10,
-        .Mode      = GPIO_MODE_AF_OD,
-        .Pull      = GPIO_PULLUP,
-        .Speed     = GPIO_SPEED_FREQ_HIGH,
-        .Alternate = GPIO_AF4_I2C1
+        .Pin   = GPIO_PIN_9 | GPIO_PIN_10,
+        .Pull  = GPIO_PULLUP,
+        .Speed = GPIO_SPEED_FREQ_HIGH
     };
+
+    /* ----------------------------------------------------------
+     * 1.  Temporary OUTPUT-OD for bus-recovery
+     * ---------------------------------------------------------- */
+    io.Mode = GPIO_MODE_OUTPUT_OD;
     HAL_GPIO_Init(GPIOA, &io);
+
+    /* nine SCL pulses with SDA released → clear “bus busy”  */
+    for (int i = 0; i < 9; ++i) {
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_9, GPIO_PIN_SET);
+        HAL_Delay(1);                       /* ≈5–10 µs ok */
+        HAL_GPIO_WritePin(GPIOA, GPIO_PIN_9, GPIO_PIN_RESET);
+        HAL_Delay(1);
+    }
+
+    /* ----------------------------------------------------------
+     * 2.  Re-configure pins for the I²C peripheral
+     * ---------------------------------------------------------- */
+    io.Mode      = GPIO_MODE_AF_OD;
+    io.Alternate = GPIO_AF4_I2C1;
+    HAL_GPIO_Init(GPIOA, &io);              /* overwrites MODE bits */
 }
 
 static void i2c_recover(void)          /* PA9=SCL, PA10=SDA */
@@ -68,7 +89,7 @@ static HAL_StatusTypeDef tlv_soft_reset(void)
 {
     uint8_t zero = 0x00;
     HAL_StatusTypeDef st =
-        HAL_I2C_Master_Transmit(&hi2c1, TLV_ADDR_W, &zero, 1, HAL_MAX_DELAY); /* GC */
+        HAL_I2C_Master_Transmit(&hi2c1, 0x00, &zero, 1, HAL_MAX_DELAY); /* GC */
     HAL_Delay(2);                              /* >1.5 ms as per datasheet */
     return st;
 }
@@ -76,7 +97,7 @@ static HAL_StatusTypeDef tlv_soft_reset(void)
 static HAL_StatusTypeDef tlv_send_config(void)
 {
     /* 0x00 pointer, then 0x83 0x00 0x60  (global parity already odd) */
-    const uint8_t cfg[4] = { 0x00, 0x83, 0x00, 0x60 };
+    const uint8_t cfg[4] = {0x00, 0x02, 0x00, 0x60 };
 
     HAL_StatusTypeDef st =
         HAL_I2C_Master_Transmit(&hi2c1, TLV_ADDR_W,   /* 8-bit write addr */
@@ -135,9 +156,9 @@ void TLV493D_Init(void)
 {
     TLV_I2C_GPIO_Init();
     TLV_I2C_Init();
-    // tlv_send_config();  /* send initial configuration */
-    HAL_Delay(2);      /* >1.5 ms as per datasheet */
     tlv_soft_reset();  /* general-call reset */
+    HAL_Delay(2);      /* >1.5 ms as per datasheet */
+    tlv_send_config();  /* send initial configuration */
     HAL_Delay(2);      /* >1.5 ms as per datasheet */
 }
 
@@ -147,19 +168,19 @@ void TLV493D_Init(void)
 /* ---- no more “<< 1” anywhere ---- */
 static HAL_StatusTypeDef tlv493d_read6(uint8_t buf[6])
 {
-    if (tlv_send_config() != HAL_OK)
-    {
-        uint32_t err = HAL_I2C_GetError(&hi2c1);
-        printf("I2C ERR 0x %lx \r\n", err);
-        return HAL_ERROR;
-    }
+    // if (tlv_send_config() != HAL_OK)
+    // {
+    //     uint32_t err = HAL_I2C_GetError(&hi2c1);
+    //     printf("I2C ERR 0x %lx \r\n", err);
+    //     return HAL_ERROR;
+    // }
 
-    HAL_Delay(3);  /* wait one conversion (≥2.3 ms) */
+    // HAL_Delay(3);  /* wait one conversion (≥2.3 ms) */
 
     if (HAL_I2C_Master_Receive (&hi2c1, TLV_ADDR_R, buf, 6, HAL_MAX_DELAY) != HAL_OK)
         return HAL_ERROR;
 
-    tlv_send_sleep();  /* put TLV493D to sleep */
+    // tlv_send_sleep();  /* put TLV493D to sleep */
 
     return HAL_OK;
 }
