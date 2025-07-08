@@ -4,6 +4,7 @@
 /*  I²C low-level                                                    */
 /* ================================================================ */
 static I2C_HandleTypeDef hi2c1;
+static uint16_t angle_filt;
 
 #define TLV_ADDR       0x5E     /* 7-bit address       */
 /* Register map */
@@ -127,27 +128,35 @@ static uint16_t int_atan2_deg(int16_t y, int16_t x)
 {
     if (x == 0 && y == 0) return 0;
 
-    int32_t ax = (x >= 0) ?  x : -x;
-    int32_t ay = (y >= 0) ?  y : -y;
+    int32_t ax = x >= 0 ?  x : -x;
+    int32_t ay = y >= 0 ?  y : -y;
 
-    /*  tan(angle) ≈ y/x  scaled by 128  */
-    int32_t t = (ay << 7) / (ax + 1);
+    /* tan(θ) ≈ y/x, scaled by 128 */
+    int32_t t;
+    if (ax == 0)
+        t = 301;                        /* force exactly 89° bucket */
+    else {
+        t = (ay << 7) / ax;             /* 0 … large */
+        if (t > 301) t = 301;           /* clamp to 89° equivalent */
+    }
 
-    /* piece-wise linear approximation */
+    /* piece-wise LUT */
     uint16_t angle =
-        (t <  13) ? ( 0 +  t) :                       /*   0–  9° */
-        (t <  39) ? (10 + (t-13)/2) :                 /*  10– 29° */
-        (t <  98) ? (30 + (t-39)/3) :                 /*  30– 59° */
-                    (60 + (t-98)/7);                  /*  60– 89° */
+        (t <  13) ? ( 0 +  t) :
+        (t <  39) ? (10 + (t-13)/2) :
+        (t <  98) ? (30 + (t-39)/3) :
+                    (60 + (t-98)/7);    /* now maxes out at 89° */
 
-    /* octave folding */
-    if      (x >= 0 && y >= 0) ;                     /* Q1: angle     */
-    else if (x <  0 && y >= 0) angle = 180 - angle;  /* Q2            */
-    else if (x <  0 && y <  0) angle = 180 + angle;  /* Q3            */
-    else                       angle = 360 - angle;  /* Q4            */
+    /* quadrant folding */
+    if      (x >= 0 && y >= 0) ;                     /* Q1 */
+    else if (x <  0 && y >= 0) angle = 180 - angle;  /* Q2 */
+    else if (x <  0 && y <  0) angle = 180 + angle;  /* Q3 */
+    else                       angle = 360 - angle;  /* Q4 */
 
-    return angle % 360;
+    return angle;                                    /* 0 … 359 */
 }
+
+
 
 /* ================================================================ */
 /*  Public functions                                                */
@@ -180,7 +189,10 @@ uint16_t TLV493D_ReadAngleDeg(void)
         if (x & 0x800) x |= 0xF000;
         if (y & 0x800) y |= 0xF000;
         angle = int_atan2_deg(y, x);
-        printf("x=%d, y=%d angle = %d \r\n", x, y, angle);
+        angle_filt = angle_filt - (angle_filt >> 2)  /* (1-α) part, α = 1/4 */
+           + angle;                         /* + α·new */
+        uint16_t temp_angle_filt = angle_filt >> 2;
+        printf("x=%d, y=%d angle = %d, filt = %d \r\n", x, y, angle, temp_angle_filt);
         // printf("%d°\r\n", angle);
     } else
     {
