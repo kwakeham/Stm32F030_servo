@@ -162,30 +162,13 @@ void TLV493D_Init(void)
     HAL_Delay(2);      /* >1.5 ms as per datasheet */
 }
 
-/* ---- wakes TLV493D, waits one conversion, reads 6-byte frame ---- */
-
-
-/* ---- no more “<< 1” anywhere ---- */
 static HAL_StatusTypeDef tlv493d_read6(uint8_t buf[6])
 {
-    // if (tlv_send_config() != HAL_OK)
-    // {
-    //     uint32_t err = HAL_I2C_GetError(&hi2c1);
-    //     printf("I2C ERR 0x %lx \r\n", err);
-    //     return HAL_ERROR;
-    // }
-
-    // HAL_Delay(3);  /* wait one conversion (≥2.3 ms) */
-
     if (HAL_I2C_Master_Receive (&hi2c1, TLV_ADDR_R, buf, 6, HAL_MAX_DELAY) != HAL_OK)
         return HAL_ERROR;
 
-    // tlv_send_sleep();  /* put TLV493D to sleep */
-
     return HAL_OK;
 }
-
-
 
 uint16_t TLV493D_ReadAngleDeg(void)
 {
@@ -196,8 +179,8 @@ uint16_t TLV493D_ReadAngleDeg(void)
         int16_t y = ((raw[1] << 4) | (raw[4] & 0x0F));
         if (x & 0x800) x |= 0xF000;
         if (y & 0x800) y |= 0xF000;
-        // angle = int_atan2_deg(y, x);
-        printf("x=%d, y=%d\r\n", x, y);
+        angle = int_atan2_deg(y, x);
+        printf("x=%d, y=%d angle = %d \r\n", x, y, angle);
         // printf("%d°\r\n", angle);
     } else
     {

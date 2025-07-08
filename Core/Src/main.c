@@ -65,19 +65,6 @@ void uart_puti32(int32_t v);
 
 /* Private user code ---------------------------------------------------------*/
 /* USER CODE BEGIN 0 */
-static int systick_is_running(void)
-{
-    return (SysTick->CTRL & SysTick_CTRL_ENABLE_Msk) != 0;
-}
-
-#define DEBUG_PIN   GPIO_PIN_5
-#define DEBUG_PORT  GPIOA
-static void wait3(void)
-{
-    HAL_GPIO_WritePin(DEBUG_PORT, DEBUG_PIN, GPIO_PIN_SET); /* ↑ */
-    HAL_Delay(3);                                           /* 3 ms */
-    HAL_GPIO_WritePin(DEBUG_PORT, DEBUG_PIN, GPIO_PIN_RESET);/* ↓ */
-}
 /* USER CODE END 0 */
 
 /**
@@ -116,51 +103,25 @@ int main(void)
   TLV493D_Init();  // Initialize the TLV493D magnetic angle sensor
 
   /* USER CODE BEGIN 2 */
-  printf("\r\n*** USART1 ready on PA2/PA3 @115200 ***\r\n");
+  // printf("\r\n*** USART1 ready on PA2/PA3 @115200 ***\r\n");
   /* USER CODE END 2 */
 
-  if (systick_is_running())
-    printf("SysTick ON  –  HAL_Delay() will block\r\n");
-  else
-      printf("SysTick OFF –  HAL_Delay() returns immediately!\r\n");
-
-  wait3();  /* wait 3 ms */
-  // extern volatile uint32_t uwTick;
-  // uint32_t t0 = uwTick;
-  // HAL_Delay(3);
-  // uint32_t t1 = uwTick;
-  // uart_putu32(t1 - t0);    /* should print 3 (±1) */
-  // uart_puts("\r\n");
-  /* Infinite loop */
   /* USER CODE BEGIN WHILE */
   while (1)
   {
     // /* USER CODE END WHILE */
-    // uint32_t width = rc_us;       /* atomic copy */
-    // int16_t pwm = rc_us_to_pwm(width);
-    // DRV8220_SetSpeed(pwm);                  /* drive the motor  */
-    // // printf("Tick: %lu pwm: %lu ms\r\n", HAL_GetTick(), width);
-    // printf("%lu µs  →  %d\n", width, pwm);
-    // HAL_Delay(500);
     if (rc_new)               /* do we have fresh data?      */
     {
         rc_new = 0;           /* clear BEFORE processing      */
         uint32_t width = rc_us;  /* atomic copy                  */
         int16_t  pwm = rc_us_to_pwm(width);
         DRV8220_SetSpeed(pwm);
-
-        // uint32_t angle = TLV493D_ReadAngleDeg();  /* read angle sensor */
-
-        // uart_puts(" angle: ");
-        // uart_putu32(angle);
-        // uart_puts("\r\n");
-
+        uint32_t angle = TLV493D_ReadAngleDeg();  /* read angle sensor */
     }
-    uint32_t angle = TLV493D_ReadAngleDeg();  /* read angle sensor */
-    HAL_Delay(20);  /* wait 20 ms */
 
-        /* go to sleep until the next capture interrupt (≈20 ms) */
-    // __WFI();                  /* or HAL_PWR_EnterSLEEPMode()  */
+
+    /* go to sleep until the next capture interrupt (≈20 ms) */
+    __WFI();                  /* or HAL_PWR_EnterSLEEPMode()  */
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
@@ -453,7 +414,7 @@ void Error_Handler(void)
   __disable_irq();
   while (1)
   {
-    printf("Error occurred!\r\n");
+    // printf("Error occurred!\r\n");
   }
   /* USER CODE END Error_Handler_Debug */
 }
