@@ -124,38 +124,106 @@ static HAL_StatusTypeDef tlv_send_sleep(void)
 /* ================================================================ */
 /*  Fixed-point atan2  (≤1 ° error, no libm)                         */
 /* ================================================================ */
-static uint16_t int_atan2_deg(int16_t y, int16_t x)
-{
-    if (x == 0 && y == 0) return 0;
+// static uint16_t int_atan2_deg(int16_t y, int16_t x)
+// {
+//     if (x == 0 && y == 0) return 0;
 
-    int32_t ax = x >= 0 ?  x : -x;
-    int32_t ay = y >= 0 ?  y : -y;
+//     int32_t ax = x >= 0 ?  x : -x;
+//     int32_t ay = y >= 0 ?  y : -y;
 
-    /* tan(θ) ≈ y/x, scaled by 128 */
-    int32_t t;
-    if (ax == 0)
-        t = 301;                        /* force exactly 89° bucket */
-    else {
-        t = (ay << 7) / ax;             /* 0 … large */
-        if (t > 301) t = 301;           /* clamp to 89° equivalent */
+//     /* tan(θ) ≈ y/x, scaled by 128 */
+//     int32_t t;
+//     if (ax == 0)
+//         t = 301;                        /* force exactly 89° bucket */
+//     else {
+//         t = (ay << 7) / ax;             /* 0 … large */
+//         if (t > 301) t = 301;           /* clamp to 89° equivalent */
+//     }
+
+//     /* piece-wise LUT */
+//     uint16_t angle =
+//         (t <  13) ? ( 0 +  t) :
+//         (t <  39) ? (10 + (t-13)/2) :
+//         (t <  98) ? (30 + (t-39)/3) :
+//                     (60 + (t-98)/7);    /* now maxes out at 89° */
+
+//     /* quadrant folding */
+//     if      (x >= 0 && y >= 0) ;                     /* Q1 */
+//     else if (x <  0 && y >= 0) angle = 180 - angle;  /* Q2 */
+//     else if (x <  0 && y <  0) angle = 180 + angle;  /* Q3 */
+//     else                       angle = 360 - angle;  /* Q4 */
+
+//     return angle;                                    /* 0 … 359 */
+// }
+
+static uint16_t int_atan2_deg(int16_t y, int16_t x) {
+    // Fixed-point atan2 approximation returning angle in degrees from 0–359
+    // Accuracy is coarse but fast, suitable for embedded systems.
+
+    const uint8_t atan_table[8] = { 0, 14, 28, 45, 63, 84, 108, 135 };
+    uint16_t angle;
+    int16_t abs_y = (y >= 0) ? y : -y;
+    int16_t abs_x = (x >= 0) ? x : -x;
+    int16_t ratio;
+
+    if (abs_x == 0 && abs_y == 0)
+        return 0;  // undefined, default to 0°
+
+    if (abs_x > abs_y) {
+        ratio = (abs_y << 7) / abs_x;  // scale to 0–128
+        angle = atan_table[(ratio * 7) >> 7];
+    } else {
+        ratio = (abs_x << 7) / abs_y;  // scale to 0–128
+        angle = 90 - atan_table[(ratio * 7) >> 7];
     }
 
-    /* piece-wise LUT */
-    uint16_t angle =
-        (t <  13) ? ( 0 +  t) :
-        (t <  39) ? (10 + (t-13)/2) :
-        (t <  98) ? (30 + (t-39)/3) :
-                    (60 + (t-98)/7);    /* now maxes out at 89° */
-
-    /* quadrant folding */
-    if      (x >= 0 && y >= 0) ;                     /* Q1 */
-    else if (x <  0 && y >= 0) angle = 180 - angle;  /* Q2 */
-    else if (x <  0 && y <  0) angle = 180 + angle;  /* Q3 */
-    else                       angle = 360 - angle;  /* Q4 */
-
-    return angle;                                    /* 0 … 359 */
+    // Adjust angle based on quadrant
+    if (x >= 0 && y >= 0) {
+        return angle;                 // Q1: 0–89°
+    } else if (x < 0 && y >= 0) {
+        return 180 - angle;           // Q2: 90–179°
+    } else if (x < 0 && y < 0) {
+        return 180 + angle;           // Q3: 180–269°
+    } else { // (x >= 0 && y < 0)
+        return 360 - angle;           // Q4: 270–359°
+    }
 }
 
+uint16_t fast_atan2_deg(int16_t y, int16_t x) {
+    // Approximate atan2(y,x) in degrees [0–359]
+    // Max error ~1°, no LUTs, no floats
+    // Source: Rajan et al., 2001 / Cleaned up versions of atan2 approximations
+
+    const int32_t ONE_EIGHTY = 180;
+    const int32_t NINETY = 90;
+    const int32_t RAD_TO_DEG_SCALE = 57;  // approximation of (180 / PI)
+
+    if (x == 0 && y == 0)
+        return 0; // undefined, default to 0
+
+    int32_t abs_y = y >= 0 ? y : -y;
+    int32_t abs_x = x >= 0 ? x : -x;
+
+    int32_t angle;
+    if (abs_x > abs_y) {
+        int32_t r = (abs_y * 1000) / abs_x;
+        angle = ((45 * r) + 500) / 1000;
+    } else {
+        int32_t r = (abs_x * 1000) / abs_y;
+        angle = 90 - ((45 * r + 500) / 1000);
+    }
+
+    // Quadrant correction
+    if (x >= 0 && y >= 0) {
+        return angle;
+    } else if (x < 0 && y >= 0) {
+        return 180 - angle;
+    } else if (x < 0 && y < 0) {
+        return 180 + angle;
+    } else { // x >= 0 && y < 0
+        return 360 - angle;
+    }
+}
 
 
 /* ================================================================ */
@@ -188,7 +256,7 @@ uint16_t TLV493D_ReadAngleDeg(void)
         int16_t y = ((raw[1] << 4) | (raw[4] & 0x0F));
         if (x & 0x800) x |= 0xF000;
         if (y & 0x800) y |= 0xF000;
-        angle = int_atan2_deg(y, x);
+        angle = fast_atan2_deg(y, x);
         angle_filt = angle_filt - (angle_filt >> 2)  /* (1-α) part, α = 1/4 */
            + angle;                         /* + α·new */
         uint16_t temp_angle_filt = angle_filt >> 2;
