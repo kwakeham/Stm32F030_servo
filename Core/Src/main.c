@@ -45,7 +45,12 @@ UART_HandleTypeDef huart1;
 
 /* USER CODE BEGIN PV */
 volatile uint32_t rc_us = 1500;           // latest width in µs
-volatile uint8_t  rc_new;         /* flag set in ISR             */
+volatile uint8_t  rc_new;                 // flag set in ISR
+
+// PID variables
+float Kp = -100.0f, Ki = -10.0f, Kd = 0.0f;   // PID gains
+float pid_integral = 0.0f, pid_prev_error = 0.0f; // PID state
+float pid_dt = 0.02f;                     // Time step (20 ms)
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -60,7 +65,8 @@ void uart_puts(const char *s);
 void uart_putu32(uint32_t v);
 void uart_puti32(int32_t v);
 /* USER CODE BEGIN PFP */
-
+int16_t PID_Controller(float setpoint, float feedback);
+uint16_t scale_input_to_angle(int16_t input) ;
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -109,19 +115,29 @@ int main(void)
   /* USER CODE BEGIN WHILE */
   while (1)
   {
-    // /* USER CODE END WHILE */
-    if (rc_new)               /* do we have fresh data?      */
-    {
-        rc_new = 0;           /* clear BEFORE processing      */
-        uint32_t width = rc_us;  /* atomic copy                  */
-        int16_t  pwm = rc_us_to_pwm(width);
-        DRV8220_SetSpeed(pwm);
-        uint32_t angle = TLV493D_ReadAngleDeg();  /* read angle sensor */
+    if (rc_new) {               /* Do we have fresh data? */
+        rc_new = 0;             /* Clear BEFORE processing */
+        uint32_t width = rc_us; /* Atomic copy */
+        int16_t  pwm = rc_us_to_pwm(width); // Desired angle (scaled)
+        uint16_t angle_setpoint = scale_input_to_angle(pwm); // Scale to angle
+        uint32_t angle = TLV493D_ReadAngleDeg(); // Read current angle
+        int16_t pid_output = PID_Controller(angle_setpoint, (float)angle); // PID output
+        DRV8220_SetSpeed(pid_output); // Set motor speed
+        uart_puti32(pwm); // Print angle to UART
+        uart_puts("pw,");
+        uart_puti32(angle); // Print angle to UART
+        uart_puts("a,");
+        uart_puti32(angle_setpoint); // Print setpoint angle to UART
+        uart_puts("s,");
+        uart_puti32(pid_output); // Print PID output to UART
+        uart_puts("p\r\n");
+        
+
+        
     }
 
-
-    /* go to sleep until the next capture interrupt (≈20 ms) */
-    __WFI();                  /* or HAL_PWR_EnterSLEEPMode()  */
+    /* Go to sleep until the next capture interrupt (≈20 ms) */
+    __WFI(); // or HAL_PWR_EnterSLEEPMode()
     /* USER CODE BEGIN 3 */
   }
   /* USER CODE END 3 */
@@ -365,7 +381,7 @@ void uart_putu32(uint32_t v)
     int  i = 10;
     buf[i--] = '\0';
     do { buf[i--] = '0' + (v % 10); } while ((v /= 10));
-    HAL_UART_Transmit(&huart1, (uint8_t*)&buf[i+1], 10-i, HAL_MAX_DELAY);
+    HAL_UART_Transmit(&huart1, (uint8_t*)&buf[i+1], strlen(&buf[i+1]), HAL_MAX_DELAY);
 }
 
 void uart_puti32(int32_t v)
@@ -398,9 +414,43 @@ void uart_puti32(int32_t v)
         buf[i--] = '-';
     }
 
-    HAL_UART_Transmit(&huart1, (uint8_t*)&buf[i+1], 11 - i, HAL_MAX_DELAY);
+    // HAL_UART_Transmit(&huart1, (uint8_t*)&buf[i+1], 11 - i, HAL_MAX_DELAY);
+    HAL_UART_Transmit(&huart1, (uint8_t*)&buf[i+1], strlen(&buf[i+1]), HAL_MAX_DELAY);
 }
 
+/* USER CODE BEGIN 4 */
+
+uint16_t scale_input_to_angle(int16_t input) {
+    // Maps -1000..1000 to 260..315
+    // Input is expected to be in range -1000 to +1000
+    // Output is clamped to 260–315
+
+    if (input < -1000) input = -1000;
+    if (input > 1000) input = 1000;
+
+    // Scale: 260 + ((input + 1000) * (315 - 260)) / 2000
+    //        260 + ((input + 1000) * 55) / 2000
+    return 260 + (((int32_t)input + 1000) * 55) / 2000;
+}
+
+int16_t PID_Controller(float setpoint, float feedback) {
+    float error = setpoint - feedback;    // Calculate error
+    pid_integral += error * pid_dt;       // Update integral
+    if (pid_integral > 500.0f) pid_integral = 500.0f;  // Upper limit
+    if (pid_integral < -500.0f) pid_integral = -500.0f; // Lower limit
+    
+    float derivative = (error - pid_prev_error) / pid_dt; // Calculate derivative
+    pid_prev_error = error;               // Save current error for next iteration
+
+    // Compute PID output
+    float output = (Kp * error) + (Ki * pid_integral) + (Kd * derivative);
+
+    // Clamp output to motor speed range (-1000 to 1000)
+    if (output > 1000) output = 1000;
+    if (output < -1000) output = -1000;
+
+    return (int16_t)output;
+}
 /* USER CODE END 4 */
 
 /**

@@ -260,12 +260,14 @@ uint16_t TLV493D_ReadAngleDeg(void)
         angle_filt = angle_filt - (angle_filt >> 2)  /* (1-α) part, α = 1/4 */
            + angle;                         /* + α·new */
         uint16_t temp_angle_filt = angle_filt >> 2;
-        printf("x=%d, y=%d angle = %d, filt = %d \r\n", x, y, angle, temp_angle_filt);
+        // printf("x=%d, y=%d angle = %d, filt = %d \r\n", x, y, angle, temp_angle_filt);
+        // uart_puti32(temp_angle_filt);
+        // uart_puts("°\r\n");
         // printf("%d°\r\n", angle);
     } else
     {
         uint32_t err = HAL_I2C_GetError(&hi2c1);
-        printf("I2C ERR 0x %lx \r\n", err);
+        // printf("I2C ERR 0x %lx \r\n", err);
         return HAL_ERROR;
     }
 
