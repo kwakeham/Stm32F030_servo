@@ -48,7 +48,7 @@ volatile uint32_t rc_us = 1500;           // latest width in µs
 volatile uint8_t  rc_new;                 // flag set in ISR
 
 // PID variables
-float Kp = -100.0f, Ki = -10.0f, Kd = 0.0f;   // PID gains
+float Kp = -100.0f, Ki = -5.0f, Kd = 0.0f;   // PID gains
 float pid_integral = 0.0f, pid_prev_error = 0.0f; // PID state
 float pid_dt = 0.02f;                     // Time step (20 ms)
 /* USER CODE END PV */
@@ -132,9 +132,6 @@ int main(void)
         uart_puts("s,");
         uart_puti32(pid_output); // Print PID output to UART
         uart_puts("p\r\n");
-        
-
-        
     }
 
     /* Go to sleep until the next capture interrupt (≈20 ms) */
@@ -437,6 +434,12 @@ uint16_t scale_input_to_angle(int16_t input) {
 
 int16_t PID_Controller(float setpoint, float feedback) {
     float error = setpoint - feedback;    // Calculate error
+
+    // Deadband: Ignore small errors
+    if (error > -2.0f && error < 2.0f) {
+        error = 0.0f;
+    }
+
     pid_integral += error * pid_dt;       // Update integral
     if (pid_integral > 500.0f) pid_integral = 500.0f;  // Upper limit
     if (pid_integral < -500.0f) pid_integral = -500.0f; // Lower limit
