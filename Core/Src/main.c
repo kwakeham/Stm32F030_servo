@@ -110,6 +110,7 @@ int main(void)
 
   /* USER CODE BEGIN 2 */
   // printf("\r\n*** USART1 ready on PA2/PA3 @115200 ***\r\n");
+  uart_puts("\r\n*** USART1 ready on PA2/PA3 @115200 ***\r\n");
   /* USER CODE END 2 */
 
   /* USER CODE BEGIN WHILE */
@@ -430,7 +431,8 @@ uint16_t scale_input_to_angle(int16_t input) {
 
     // Scale: 260 + ((input + 1000) * (315 - 260)) / 2000
     //        260 + ((input + 1000) * 55) / 2000
-    return 260 + (((int32_t)input + 1000) * 55) / 2000;
+    // return 260 + (((int32_t)input + 1000) * 55) / 2000; //OLD
+    return 270 + (((int32_t)input * 80) / 2000);
 }
 
 int16_t PID_Controller(float setpoint, float feedback) {
