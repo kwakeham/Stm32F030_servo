@@ -268,6 +268,9 @@ uint16_t TLV493D_ReadAngleDeg(void)
     {
         uint32_t err = HAL_I2C_GetError(&hi2c1);
         // printf("I2C ERR 0x %lx \r\n", err);
+        uart_puts("I2C ERR 0x");
+        uart_putu32(err);
+        uart_puts("\r\n");
         return HAL_ERROR;
     }
 
