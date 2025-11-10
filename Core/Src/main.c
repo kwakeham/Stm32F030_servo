@@ -50,9 +50,9 @@ volatile uint8_t  rc_new;                 // flag set in ISR
 volatile uint8_t  timer16_interrupt_flag; // flag for TIM6 interrupt
 
 // PID variables
-float Kp = -100.0f, Ki = -5.0f, Kd = 0.0f;   // PID gains
+float Kp = -75.0f, Ki = -10.0f, Kd = 0.0f;   // PID gains
 float pid_integral = 0.0f, pid_prev_error = 0.0f; // PID state
-float pid_dt = 0.02f;                     // Time step (20 ms)
+float pid_dt = 0.005f;                     // Time step (5 ms)
 /* USER CODE END PV */
 
 /* Private function prototypes -----------------------------------------------*/
@@ -116,31 +116,39 @@ int main(void)
   uart_puts("\r\n*** USART1 ready on PA2/PA3 @115200 ***\r\n");
   /* USER CODE END 2 */
 
+  uint16_t angle_setpoint = 0;
+  int16_t  pwm = 0;
   /* USER CODE BEGIN WHILE */
   while (1)
   {
     if (rc_new) {               /* Do we have fresh data? */
         rc_new = 0;             /* Clear BEFORE processing */
         uint32_t width = rc_us; /* Atomic copy */
-        int16_t  pwm = rc_us_to_pwm(width); // Desired angle (scaled)
-        uint16_t angle_setpoint = scale_input_to_angle(pwm); // Scale to angle
-        uint32_t angle = TLV493D_ReadAngleDeg(); // Read current angle
-        int16_t pid_output = PID_Controller(angle_setpoint, (float)angle); // PID output
-        DRV8220_SetSpeed(pid_output); // Set motor speed
-        uart_puti32(pwm); // Print angle to UART
-        uart_puts("pw,");
-        uart_puti32(angle); // Print angle to UART
-        uart_puts("a,");
-        uart_puti32(angle_setpoint); // Print setpoint angle to UART
-        uart_puts("s,");
-        uart_puti32(pid_output); // Print PID output to UART
-        uart_puts("p\r\n");
+        pwm = rc_us_to_pwm(width); // Desired angle (scaled)
+        angle_setpoint = scale_input_to_angle(pwm); // Scale to angle
     }
 
     if (timer16_interrupt_flag) {
         timer16_interrupt_flag = 0; // Clear flag
-        uart_puts("Timer6 interrupt occurred\r\n");
+        static uint16_t uart_counter = 0;
+        // uart_puts("Timer6 interrupt occurred\r\n");
         // Secondary control loop tasks can be added here
+        uint32_t angle = TLV493D_ReadAngleDeg(); // Read current angle
+        int16_t pid_output = PID_Controller(angle_setpoint, (float)angle); // PID output
+        DRV8220_SetSpeed(pid_output); // Set motor speed
+        // Only send UART data every 10 timer interrupts (adjust as needed)
+        uart_counter++;
+        if (uart_counter >= 30) {
+          uart_counter = 0; // Reset the counter
+          uart_puti32(pwm); // Print angle to UART
+          uart_puts("pw,");
+          uart_puti32(angle); // Print angle to UART
+          uart_puts("a,");
+          uart_puti32(angle_setpoint); // Print setpoint angle to UART
+          uart_puts("s,");
+          uart_puti32(pid_output); // Print PID output to UART
+          uart_puts("p\r\n");
+        }
     } 
 
     /* Go to sleep until the next capture interrupt (≈20 ms) */
@@ -335,7 +343,7 @@ void MX_TIM16_Init(void) {
 
     htim16.Instance = TIM16;
     htim16.Init.Prescaler = (HAL_RCC_GetHCLKFreq() / 10000) - 1; // 10 kHz timer clock
-    htim16.Init.Period = 1999; // 10 kHz / 2000 = 5 Hz (20 ms period)
+    htim16.Init.Period = 49; // 10 kHz / 50 = 200 Hz (5 ms period)
     htim16.Init.CounterMode = TIM_COUNTERMODE_UP;
     HAL_TIM_Base_Init(&htim16);
 
@@ -470,7 +478,7 @@ int16_t PID_Controller(float setpoint, float feedback) {
     float error = setpoint - feedback;    // Calculate error
 
     // Deadband: Ignore small errors
-    if (error > -2.0f && error < 2.0f) {
+    if (error > -2.5f && error < 2.5f) {
         error = 0.0f;
     }
 
