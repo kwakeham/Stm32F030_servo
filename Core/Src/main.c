@@ -27,6 +27,7 @@
 /* Private typedef -----------------------------------------------------------*/
 /* USER CODE BEGIN PTD */
 TIM_HandleTypeDef htim3;
+TIM_HandleTypeDef htim16;
 UART_HandleTypeDef huart1;
 
 /* USER CODE END PTD */
@@ -46,6 +47,7 @@ UART_HandleTypeDef huart1;
 /* USER CODE BEGIN PV */
 volatile uint32_t rc_us = 1500;           // latest width in µs
 volatile uint8_t  rc_new;                 // flag set in ISR
+volatile uint8_t  timer16_interrupt_flag; // flag for TIM6 interrupt
 
 // PID variables
 float Kp = -100.0f, Ki = -5.0f, Kd = 0.0f;   // PID gains
@@ -103,6 +105,7 @@ int main(void)
   /* Initialize all configured peripherals */
   MX_GPIO_Init();
   MX_TIM3_Init();
+  MX_TIM16_Init();
   MX_USART1_UART_Init();
 
   DRV8220_Init();  // Initialize the DRV8220 motor driver
@@ -133,6 +136,12 @@ int main(void)
         uart_puti32(pid_output); // Print PID output to UART
         uart_puts("p\r\n");
     }
+
+    if (timer16_interrupt_flag) {
+        timer16_interrupt_flag = 0; // Clear flag
+        uart_puts("Timer6 interrupt occurred\r\n");
+        // Secondary control loop tasks can be added here
+    } 
 
     /* Go to sleep until the next capture interrupt (≈20 ms) */
     __WFI(); // or HAL_PWR_EnterSLEEPMode()
@@ -321,6 +330,31 @@ void TIM3_IRQHandler(void)
     HAL_TIM_IRQHandler(&htim3);   /* hands control to HAL */
 }
 
+void MX_TIM16_Init(void) {
+    __HAL_RCC_TIM16_CLK_ENABLE();  // Enable TIM6 clock
+
+    htim16.Instance = TIM16;
+    htim16.Init.Prescaler = (HAL_RCC_GetHCLKFreq() / 10000) - 1; // 10 kHz timer clock
+    htim16.Init.Period = 1999; // 10 kHz / 2000 = 5 Hz (20 ms period)
+    htim16.Init.CounterMode = TIM_COUNTERMODE_UP;
+    HAL_TIM_Base_Init(&htim16);
+
+    // Enable interrupt
+    HAL_NVIC_SetPriority(TIM16_IRQn, 2, 0);
+    HAL_NVIC_EnableIRQ(TIM16_IRQn);
+
+    HAL_TIM_Base_Start_IT(&htim16); // Start timer with interrupt
+}
+
+void TIM16_IRQHandler(void) {
+    HAL_TIM_IRQHandler(&htim16); // Call HAL handler
+}
+
+void HAL_TIM_PeriodElapsedCallback(TIM_HandleTypeDef *htim) {
+    if (htim->Instance == TIM16) {
+        timer16_interrupt_flag = 1; // Set flag for main loop
+    }
+}
 
 int _write(int file, char *ptr, int len)
 {
