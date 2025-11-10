@@ -268,6 +268,6 @@ uint16_t TLV493D_ReadAngleDeg(void)
         uart_puts("\r\n");
         return HAL_ERROR;
     }
-
-    return angle;            /* 0 … 359° */
+    return angle_filt >> 2;   /* return filtered angle */
+    // return angle;            /* 0 … 359° */
 }
